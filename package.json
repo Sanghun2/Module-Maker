@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "displayName": "ui manager",
   "description": "For Managing UI",
-  "unity": "6000.2.7f2",
+  "unity": "6000.2",
   "author": {
     "name": "billot games",
     "url": "https://github.com/Sanghun2/Module-Maker"
