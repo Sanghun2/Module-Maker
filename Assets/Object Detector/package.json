@@ -1,0 +1,14 @@
+﻿{
+  "name": "com.billiotgames.objectdetector",
+  "version": "1.0.0",
+  "displayName": "Object Detector",
+  "description": "3D 환경에서 물체를 감지하는 클래스입니다.",
+  "unity": "6000.2",
+  "author": {
+    "name": "Billiot Games",
+    "url": "https://github.com/Sanghun2/Coroutine-Manager"
+  },
+  "keywords": [
+    "Component"
+  ]
+}
