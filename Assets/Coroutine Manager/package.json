@@ -1,6 +1,6 @@
 ﻿{
   "name": "com.billiotgames.coroutinemanager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "Coroutine Manager",
   "description": "Coroutine을 실행 및 관리할 수 있는 Manager입니다.",
   "unity": "6000.2",

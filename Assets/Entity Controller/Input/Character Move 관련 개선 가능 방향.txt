@@ -1,0 +1,153 @@
+PadInputProvider에서 바뀔 수 있는 부분은 액션을 읽어오는 방식 입니다.
+
+현재는 InputActionReference (Input System Asset 방식)인데, 나중에 InputAction 직접 생성 방식이나 레거시 Input.GetAxis로 바뀔 수 있죠.
+
+구조:
+
+IMovementInput
+    └── InputProviderBase (액션 읽기 추상화)
+            ├── InputActionRefProvider   ← InputActionReference 방식 (현재)
+            └── LegacyInputProvider      ← Input.GetAxis 방식 (예시)
+csharp
+// InputProviderBase.cs
+public abstract class InputProviderBase : MonoBehaviour, IMovementInput
+{
+    public Vector2 MoveDirection { get; private set; }
+    public bool IsJumping { get; private set; }
+
+    protected abstract Vector2 ReadMoveDirection();
+    protected abstract bool ReadJump();
+
+    void Update()
+    {
+        MoveDirection = ReadMoveDirection();
+        IsJumping     = ReadJump();
+    }
+}
+csharp
+// InputActionRefProvider.cs
+using UnityEngine.InputSystem;
+
+public class InputActionRefProvider : InputProviderBase
+{
+    [SerializeField] InputActionReference moveAction;
+    [SerializeField] InputActionReference jumpAction;
+
+    void OnEnable()
+    {
+        moveAction.action.Enable();
+        jumpAction.action.Enable();
+    }
+
+    void OnDisable()
+    {
+        moveAction.action.Disable();
+        jumpAction.action.Disable();
+    }
+
+    protected override Vector2 ReadMoveDirection() => moveAction.action.ReadValue<Vector2>();
+    protected override bool ReadJump()             => jumpAction.action.WasPressedThisFrame();
+}
+교체 예시도 하나 같이:
+
+csharp
+// LegacyInputProvider.cs
+using UnityEngine;
+
+public class LegacyInputProvider : InputProviderBase
+{
+    protected override Vector2 ReadMoveDirection() =>
+        new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+
+    protected override bool ReadJump() => Input.GetButtonDown("Jump");
+}
+핵심 변경점:
+
+CharacterMover는 IMovementInput만 바라보고, InputProviderBase는 읽기 방식만 바꾸면 됩니다. CharacterInstaller에서 어떤 Provider를 꽂느냐만 달라지고 나머지 코드는 전혀 건드릴 필요가 없습니다.
+
+public abstract class InputProviderBase : MonoBehaviour, IMovementInput
+{
+    public Vector2 MoveDirection { get; private set; }
+    public bool IsJumping { get; private set; }
+    protected abstract Vector2 ReadMoveDirection();
+    protected abstract bool ReadJump();
+    void Update() {
+        MoveDirection = ReadMoveDirection();
+        IsJumping = ReadJump();
+    }
+}
+이 부분에서 jump가 사라질 수도 있고 jump, move 외에 다른 동작이 있을 수도 있는데 이 부분에서 더 추상화할 수 있는 부분이 있나?
+
+오전 12:12
+좋은 포인트입니다. 현재 구조의 문제는 InputProviderBase가 move/jump를 직접 알고 있다는 거죠. 새 동작이 생기면 base를 건드려야 합니다.
+
+방향: 액션을 string 키로 등록/조회하는 방식
+
+csharp
+// IMovementInput.cs
+public interface IMovementInput
+{
+    Vector2 GetAxis(string key);
+    bool GetButton(string key);
+}
+csharp
+// InputProviderBase.cs
+using System.Collections.Generic;
+using UnityEngine;
+
+public abstract class InputProviderBase : MonoBehaviour, IMovementInput
+{
+    readonly Dictionary<string, Func<Vector2>> _axisMap   = new();
+    readonly Dictionary<string, Func<bool>>    _buttonMap = new();
+
+    protected void RegisterAxis(string key, Func<Vector2> reader)   => _axisMap[key]   = reader;
+    protected void RegisterButton(string key, Func<bool> reader)    => _buttonMap[key] = reader;
+
+    public Vector2 GetAxis(string key)   => _axisMap.TryGetValue(key, out var f)   ? f() : Vector2.zero;
+    public bool GetButton(string key)    => _buttonMap.TryGetValue(key, out var f) ? f() : false;
+}
+csharp
+// InputActionRefProvider.cs
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class InputActionRefProvider : InputProviderBase
+{
+    [SerializeField] InputActionReference moveAction;
+    [SerializeField] InputActionReference jumpAction;
+    [SerializeField] InputActionReference dashAction;
+
+    void Awake()
+    {
+        RegisterAxis  ("Move", () => moveAction.action.ReadValue<Vector2>());
+        RegisterButton("Jump", () => jumpAction.action.WasPressedThisFrame());
+        RegisterButton("Dash", () => dashAction.action.WasPressedThisFrame());
+    }
+
+    void OnEnable()  { moveAction.action.Enable(); jumpAction.action.Enable(); dashAction.action.Enable(); }
+    void OnDisable() { moveAction.action.Disable(); jumpAction.action.Disable(); dashAction.action.Disable(); }
+}
+csharp
+// CharacterMover.cs 사용부
+var dir  = _input.GetAxis("Move");
+var jump = _input.GetButton("Jump");
+var dash = _input.GetButton("Dash");  // 새 동작 추가 시 Mover만 수정
+키 문자열 오타 방지가 걱정되면 상수 클래스 하나 추가:
+
+csharp
+public static class InputKey
+{
+    public const string Move = "Move";
+    public const string Jump = "Jump";
+    public const string Dash = "Dash";
+}
+장점 요약:
+
+이전 구조	현재 구조
+새 동작 추가	InputProviderBase 수정 필요	Provider에 Register 한 줄만 추가
+Jump 제거	base에서 삭제 + 하위 클래스 전부 수정	Provider에서 해당 Register 줄만 제거
+base 변경 없이 확장	불가능	가능
+InputProviderBase는 이제 "어떤 동작이 있는지"를 모르고, 각 Provider가 자신이 지원하는 동작만 등록하는 구조가 됩니다.
+
+
+
